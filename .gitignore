@@ -12,3 +12,49 @@ share/
 *.pyc
 data/
 .DS_Store
+
+# Large experiment data directories
+log/
+logs/
+wandb/
+output/
+results_backup/
+results_old/
+backup/
+backup_py/
+data_old/
+analysis_checkpoints/
+
+# Dataset directories
+cifar100/
+lop/
+
+# Generated plots and analysis
+evolution_plots/
+plot_curvature/
+my_plots/
+comparison_plots/
+comparison_analysis/
+csl_lt_class_analysis/
+plots/*.png
+plots/*.svg
+plots/backup/
+plots/built_in/
+
+# CSV and data files
+*.csv
+*.pkl
+*.npy
+
+# Configuration directories
+temp_cfg_*/
+custom_class_order/
+
+# OneDrive sync
+from_OneDrive/
+
+# Workspace files
+*.code-workspace
+
+# Temporary files
+temp_*.py

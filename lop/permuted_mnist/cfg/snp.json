@@ -2,7 +2,7 @@
 "model_version": "SnP on net with 3 hidden layer and 2000 hidden-units",
 
   "_comment_1_": "List of problem/experiment parameters",
-  "num_runs":  10,
+  "num_runs":  1,
   "num_tasks": 800,
   "use_gpu": 1,
   "data_dir": "data/snp/",

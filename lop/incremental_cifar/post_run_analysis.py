@@ -109,23 +109,23 @@ def compute_dormant_units_proportion(net: ResNet, cifar_data_loader: DataLoader,
     1000 samples
     """
 
-    device = net.fc.weight.device
-    features_per_layer = []
-    last_layer_activations = None
-    num_samples = 1000
+    device = net.fc.weight.device # device = net.fc.weight.device
+    features_per_layer = [] # features_per_layer = []
+    last_layer_activations = None # last_layer_activations = None 
+    num_samples = 1000 # num_samples = 1000
 
-    for i, sample in enumerate(cifar_data_loader):
-        image = sample["image"].to(device)
-        temp_features = []
-        net.forward(image, temp_features)
+    for i, sample in enumerate(cifar_data_loader): 
+        image = sample["image"].to(device) # image = sample['image'].to(device)
+        temp_features = [] # temp_features = []
+        net.forward(image, temp_features) # net.forward(image, temp_features)
 
-        features_per_layer = temp_features
-        last_layer_activations = temp_features[-1].cpu()
+        features_per_layer = temp_features # features_per_layer = temp_features
+        last_layer_activations = temp_features[-1].cpu() # last_layer_activations = temp_features[-1].cpu()
         break
 
-    dead_neurons = torch.zeros(len(features_per_layer), dtype=torch.float32)
-    for layer_idx in range(len(features_per_layer) - 1):
-        dead_neurons[layer_idx] = ((features_per_layer[layer_idx] != 0).float().mean(dim=(0, 2, 3)) < dormant_unit_threshold).sum()
+    dead_neurons = torch.zeros(len(features_per_layer), dtype=torch.float32) # dead_neurons = torch.zeros(len(features_per_layer), dtype=torch.float32)
+    for layer_idx in range(len(features_per_layer) - 1): # for layer_idx in range(len(features_per_layer) - 1):
+        dead_neurons[layer_idx] = ((features_per_layer[layer_idx] != 0).float().mean(dim=(0, 2, 3)) < dormant_unit_threshold).sum() # dead_neurons[layer_idx] = ((features_per_layer[layer_idx] != 0).float().mean(dim=(0, 2, 3)) < dormant_unit_threshold).sum()
     dead_neurons[-1] = ((features_per_layer[-1] != 0).float().mean(dim=0) < dormant_unit_threshold).sum()
     number_of_features = torch.sum(torch.tensor([layer_feats.shape[1] for layer_feats in features_per_layer])).item()
     return dead_neurons.sum().item() / number_of_features, last_layer_activations.numpy()

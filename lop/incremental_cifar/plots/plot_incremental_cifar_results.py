@@ -12,7 +12,19 @@ def get_max_over_bins(np_array, bin_size: int):
     """
     Gets the max over windows of size bin_size
     """
-    num_bins = np_array.size // bin_size
+    size = np_array.size
+    if size < bin_size:
+        # If array is smaller than bin_size, just return the max as a single-element array
+        return np.array([np.max(np_array)])
+    
+    # Ensure the array size is divisible by bin_size
+    if size % bin_size != 0:
+        # Pad with copies of the last value to make divisible
+        pad_size = bin_size - (size % bin_size)
+        np_array = np.pad(np_array, (0, pad_size), mode='edge')
+        size = np_array.size
+    
+    num_bins = size // bin_size
     reshaped_array = np_array.reshape(num_bins, bin_size)
     return np.max(reshaped_array, axis=1)
 
@@ -21,7 +33,19 @@ def get_min_over_bins(np_array, bin_size: int):
     """
     Gets the min over windows of size of bin_size
     """
-    num_bins = np_array.size // bin_size
+    size = np_array.size
+    if size < bin_size:
+        # If array is smaller than bin_size, just return the min as a single-element array
+        return np.array([np.min(np_array)])
+    
+    # Ensure the array size is divisible by bin_size
+    if size % bin_size != 0:
+        # Pad with copies of the last value to make divisible
+        pad_size = bin_size - (size % bin_size)
+        np_array = np.pad(np_array, (0, pad_size), mode='edge')
+        size = np_array.size
+    
+    num_bins = size // bin_size
     reshaped_array = np_array.reshape(num_bins, bin_size)
     return np.min(reshaped_array, axis=1)
 

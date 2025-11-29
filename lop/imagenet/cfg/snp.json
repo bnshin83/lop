@@ -2,7 +2,7 @@
 "model_version": "2 classes, 2k tasks, 250 epochs, SGD with momentum + Shrink-and-Perturb, 30 runs",
 
   "_comment_1_": "List of problem/experiment parameters",
-  "num_runs":  30,
+  "num_runs":  1,
   "num_tasks": 5000,
   "num_classes": 2,
   "data_dir": "data/snp/",
@@ -11,9 +11,9 @@
   "mini_batch_size": 100,
 
   "_comment_2_": "Learner parameters",
-  "agent": "bp",
+  "agent": "snp",
   "opt": "sgd",
-  "step_size": 0.01,
+  "step_size": [0.01, 0.001, 0.0001],
   "momentum": 0.9,
   "weight_decay": 1e-5,
   "perturb_scale": 1e-5

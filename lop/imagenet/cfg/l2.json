@@ -2,7 +2,7 @@
 "model_version": "2 classes, 2k tasks, 250 epochs, SGD with momentum + L2, 30 runs",
 
   "_comment_1_": "List of problem/experiment parameters",
-  "num_runs":  30,
+  "num_runs":  1,
   "num_tasks": 5000,
   "num_classes": 2,
   "data_dir": "data/l2/",
@@ -11,7 +11,7 @@
   "mini_batch_size": 100,
 
   "_comment_2_": "Learner parameters",
-  "agent": "bp",
+  "agent": "l2",
   "opt": "sgd",
   "step_size": 0.03,
   "momentum": 0.9,

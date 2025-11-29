@@ -62,6 +62,8 @@ The package has been tested on Ubuntu 20.04 and python3.8. We expect this packag
 
 ## Installation Guide
 
+### Option 1: Using virtualenv (Original Method)
+
 Create a virtual environment
 ```sh
 mkdir ~/envs
@@ -81,6 +83,38 @@ pip3 install -e .
 Add this lines in your `~/.zshrc` or `~/.bashrc`
 ```sh
 source ~/envs/lop/bin/activate
+```
+
+### Option 2 (Boonam): Using Conda
+
+1. Install Miniconda or Anaconda if you haven't already
+
+2. Create a conda environment with Python 3.8 in your scratch directory
+```sh
+conda create -p /scratch/gautschi/shin283/conda_envs/lop python=3.8 -y
+conda activate /scratch/gautschi/shin283/conda_envs/lop
+```
+
+3. Download the repository and install the requirements
+```sh
+git clone https://github.com/shibhansh/loss-of-plasticity.git
+cd loss-of-plasticity
+```
+
+4. Install PyTorch and torchvision with conda (recommended for better CUDA support)
+```sh
+conda install pytorch=2.1.0 torchvision=0.16.0 -c pytorch
+```
+
+5. Install the remaining dependencies
+```sh
+pip install free-mujoco-py==2.1.6 gym==0.23.1 pycparser==2.21 zipp==3.16.2 sympy==1.9 setuptools==44.0.0 numpy==1.24.1 mlproj-manager==0.0.29 matplotlib==3.7.2 PyYAML==6.0.1 tqdm==4.66.1 scipy==1.10.1
+pip install -e .
+```
+
+6. Add this line to your `~/.zshrc` or `~/.bashrc` to automatically activate the environment
+```sh
+conda activate lop
 ```
 
 Installation on a normal laptop with good internet connection should only take a few minutes

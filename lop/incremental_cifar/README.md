@@ -71,15 +71,24 @@ line:
 python3.8 post_run_analysis.py --results_dir ./results/base_deep_learning_system/
 ```
 
+```sh
+python3.8 post_run_analysis_modified2.py --results_dir ./results/base_deep_learning_system/
+```
+
 ### Reproducing the Plots in the Paper
 
 You can generate the plots found in the paper using the following three commands
 
 ```sh
-python3.8 ./plots/plot_incremental_cifar_results.py --results_dir ./results/ \
---algorithms base_deep_learning_system,continual_backpropagation,retrained_network \
---metric relative_accuracy_per_epoch
+python3.8 ./plots/plot_incremental_cifar_results_h.py --results_dir ./results2/ \
+--algorithms base_deep_learning_system\
+--metric test_accuracy_per_epoch
 ```
+python3.8 ./plots/plot_incremental_cifar_results_h.py --results_dir ./results/ --algorithms base_deep_learning_system --metric next_task_curvature_analysis
+
+python3.8 ./plots/plot_incremental_cifar_results.py --results_dir ./results/ \
+--algorithms base_deep_learning_system \
+--metric relative_accuracy_per_epoch
 
 The command above requires that you pass `retrained_network` as one of the algorithms because that is
 the one used as baseline. 
@@ -91,8 +100,8 @@ Whereas the following two commands generate the blue and red lines in the center
 the figure above:
 
 ```sh
-python3.8 ./plots/plot_incremental_cifar_results.py --results_dir ./results/ \
---algorithms base_deep_learning_system,continual_backpropagation \
+python3.8 ./plots/plot_incremental_cifar_results_h.py --results_dir ./results/ \
+--algorithms base_deep_learning_system,continual_backpropagation,retrained_network,head_resetting,shrink_and_perturb \
 --metric next_task_dormant_units_analysis
 
 
@@ -127,6 +136,34 @@ In the end, even when the results are not reproduced exactly, the results should
 similar to the results shown in the paper. 
 
 
+### ?
+python3.8 ./plots/plot_incremental_cifar_results_h.py --results_dir ./results/ \
+--algorithms base_deep_learning_system,continual_backpropagation,retrained_network \
+--metric previous_tasks_dormant_units_analysis
+
+### curvature calculation
+batch_run_curvature.py
+per_image_curve.py
+
+###
+plot_metric_evolution.py
+
+### 
+
+
+### accuracy evolution calculation and plot
+run_metrics_stats.sub uses two scripts:
+
+metric_stats_analyzer.py
+post_run_analysis_per_class_and_image.py
+
+generating folder structures like output/metric_stats/stats_metrics
+
+then plot using plot_epoch_accuracy_evolution.py
+python /depot/jhaddock/shin283/loss-of-plasticity/lop/incremental_cifar/plot_epoch_accuracy_evolution.py \
+    --metrics_dir /depot/jhaddock/shin283/loss-of-plasticity/lop/incremental_cifar/output/metric_stats/base_deep_learning_system/stats_metrics \
+    --class_order_file /depot/jhaddock/shin283/loss-of-plasticity/lop/incremental_cifar/results/base_deep_learning_system/class_order/index-0.npy \
+    --output_dir /depot/jhaddock/shin283/loss-of-plasticity/lop/incremental_cifar/output/plots_epoch_task_accuracy
 
 
 

@@ -25,6 +25,11 @@ def generate_online_performance_plot(
     This function plots the online performance of an algorithm for a various hyper parameter settings.
     It plots the mean and std-error for each configuration
     """
+    performances = [p for p in performances if len(p) > 0]
+    if len(performances) == 0:
+        print("No performance data found to plot. Exiting.")
+        return
+
     shape = np.shape(performances)
     if colors is None:
         colors = [(1, 0, 0, 1), (0.5, 0.5, 0, 1), (0, 1, 0, 1)]

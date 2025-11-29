@@ -2,10 +2,10 @@
 "model_version": "2 classes, 2k tasks, 250 epochs, SGD with momentum, 30 runs",
 
   "_comment_1_": "List of problem/experiment parameters",
-  "num_runs":  30,
+  "num_runs":  1,
   "num_tasks": 2000,
   "num_classes": 2,
-  "data_dir": "data/bp/",
+  "data_dir": "/scratch/gautschi/shin283/loss-of-plasticity/lop/imagenet/data/bp/",
   "num_showings": 250,
   "use_gpu": 1,
   "mini_batch_size": 100,

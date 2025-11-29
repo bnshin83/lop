@@ -4,7 +4,7 @@
   "_comment_1_": "List of problem/experiment parameters",
   "num_examples": 48000000,
   "change_after": [10000, 100000, 1000000],
-  "num_runs":  10,
+  "num_runs":  1,
   "use_gpu": 1,
   "data_dir": "data/bp/rate/",
   "to_log": true,

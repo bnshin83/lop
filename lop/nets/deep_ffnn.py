@@ -73,3 +73,10 @@ class DeepFFNN(nn.Module):
         out = self.out_layer.forward(x=out)
         return out, activations
 
+    def forward(self, x):
+        """
+        Required forward pass for nn.Module.
+        Calls predict() and returns only the network output.
+        """
+        out, _ = self.predict(x)
+        return out
