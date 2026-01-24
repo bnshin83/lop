@@ -90,6 +90,17 @@ class IncrementalCIFARExperiment(Experiment):
         self.noise_std = access_dict(exp_params, "noise_std", default=0.0, val_type=float)
         self.perturb_weights_indicator = self.noise_std > 0.0
 
+        # UPGD parameters
+        self.use_upgd = access_dict(exp_params, "use_upgd", default=False, val_type=bool)
+        self.upgd_beta_utility = access_dict(exp_params, "upgd_beta_utility", default=0.999, val_type=float)
+        self.upgd_sigma = access_dict(exp_params, "upgd_sigma", default=0.001, val_type=float)
+        self.upgd_beta1 = access_dict(exp_params, "upgd_beta1", default=0.9, val_type=float)
+        self.upgd_beta2 = access_dict(exp_params, "upgd_beta2", default=0.999, val_type=float)
+        self.upgd_eps = access_dict(exp_params, "upgd_eps", default=1e-5, val_type=float)
+        self.upgd_use_adam_moments = access_dict(exp_params, "upgd_use_adam_moments", default=True, val_type=bool)
+        self.upgd_gating_mode = access_dict(exp_params, "upgd_gating_mode", default="full", val_type=str)
+        self.upgd_non_gated_scale = access_dict(exp_params, "upgd_non_gated_scale", default=0.5, val_type=float)
+
         """ Training constants """
         self.num_epochs = 4000
         self.current_num_classes = 5
@@ -104,8 +115,27 @@ class IncrementalCIFARExperiment(Experiment):
         self.net.apply(kaiming_init_resnet_module)
 
         # initialize optimizer
-        self.optim = torch.optim.SGD(self.net.parameters(), lr=self.stepsize, momentum=self.momentum,
-                                     weight_decay=self.weight_decay)
+        if self.use_upgd:
+            from lop.algos.upgd import UPGD
+            self.optim = UPGD(
+                self.net.parameters(),
+                lr=self.stepsize,
+                weight_decay=self.weight_decay,
+                beta_utility=self.upgd_beta_utility,
+                sigma=self.upgd_sigma,
+                beta1=self.upgd_beta1,
+                beta2=self.upgd_beta2,
+                eps=self.upgd_eps,
+                use_adam_moments=self.upgd_use_adam_moments,
+                momentum=self.momentum,
+                gating_mode=self.upgd_gating_mode,
+                non_gated_scale=self.upgd_non_gated_scale
+            )
+            # Set parameter names for logging
+            self.optim.set_param_names(self.net.named_parameters())
+        else:
+            self.optim = torch.optim.SGD(self.net.parameters(), lr=self.stepsize, momentum=self.momentum,
+                                         weight_decay=self.weight_decay)
 
         # define loss function
         self.loss = torch.nn.CrossEntropyLoss(reduction="mean")
@@ -166,6 +196,14 @@ class IncrementalCIFARExperiment(Experiment):
             self.results_dict[set_type + "_accuracy_per_epoch"] = torch.zeros_like(prototype_array)
             self.results_dict[set_type + "_evaluation_runtime"] = torch.zeros_like(prototype_array)
         self.results_dict["class_order"] = self.all_classes
+
+        # UPGD-specific summaries
+        if self.use_upgd:
+            self.results_dict["upgd_global_max_utility"] = torch.zeros_like(prototype_array)
+            self.results_dict["upgd_mean_utility"] = torch.zeros_like(prototype_array)
+            self.results_dict["upgd_utility_sparsity"] = torch.zeros_like(prototype_array)
+            self.results_dict["upgd_mean_gate_value"] = torch.zeros_like(prototype_array)
+            self.results_dict["upgd_active_fraction"] = torch.zeros_like(prototype_array)
 
     # ----------------------------- For saving and loading experiment checkpoints ----------------------------- #
     def get_experiment_checkpoint(self):
@@ -258,6 +296,36 @@ class IncrementalCIFARExperiment(Experiment):
 
         self.net.train()
         self._print("\t\tEpoch run time in seconds: {0:.4f}".format(epoch_runtime))
+
+        # Store UPGD utility statistics
+        if self.use_upgd:
+            utility_stats = self.optim.get_utility_stats()
+            gating_stats = self.optim.get_gating_stats()
+
+            self.results_dict["upgd_global_max_utility"][epoch_number] = torch.tensor(
+                utility_stats.get('global_max_utility', 0.0), dtype=torch.float32
+            )
+            self.results_dict["upgd_mean_utility"][epoch_number] = torch.tensor(
+                utility_stats.get('mean_utility', 0.0), dtype=torch.float32
+            )
+            self.results_dict["upgd_utility_sparsity"][epoch_number] = torch.tensor(
+                utility_stats.get('utility_sparsity', 0.0), dtype=torch.float32
+            )
+            self.results_dict["upgd_mean_gate_value"][epoch_number] = torch.tensor(
+                gating_stats.get('mean_gate_value', 0.0), dtype=torch.float32
+            )
+            self.results_dict["upgd_active_fraction"][epoch_number] = torch.tensor(
+                gating_stats.get('active_fraction', 0.0), dtype=torch.float32
+            )
+
+            # Print utility statistics
+            self._print("\t\tUPGD Gating Mode: {0}".format(gating_stats.get('gating_mode', 'full')))
+            self._print("\t\tUPGD Gated Params: {0}, Non-Gated: {1}".format(
+                gating_stats.get('gated_params', 0), gating_stats.get('non_gated_params', 0)
+            ))
+            self._print("\t\tUPGD Global Max Utility: {0:.6f}".format(utility_stats.get('global_max_utility', 0.0)))
+            self._print("\t\tUPGD Mean Gate Value: {0:.4f}".format(gating_stats.get('mean_gate_value', 0.0)))
+            self._print("\t\tUPGD Active Fraction: {0:.4f}".format(gating_stats.get('active_fraction', 0.0)))
 
     def evaluate_network(self, test_data: DataLoader):
         """

@@ -1,0 +1,39 @@
+{
+  "_model_description_": "UPGD optimizer with hidden-only gating and Continual Backpropagation",
+
+  "_comment_1_": "Data paths; change data_path and results_dir to your convenience",
+  "data_path": "",
+  "results_dir": "",
+  "experiment_name":  "upgd_hidden_only_cbp",
+  "num_workers":  12,
+
+  "_comment_2_": "Learner Parameters",
+  "stepsize":  0.1,
+  "weight_decay": 0.0005,
+  "momentum": 0.9,
+
+  "_comment_3_": "Shrink and perturb parameters",
+  "noise_std": 0.0,
+
+  "_comment_4_": "UPGD Parameters",
+  "use_upgd": true,
+  "upgd_beta_utility": 0.999,
+  "upgd_sigma": 0.001,
+  "upgd_beta1": 0.9,
+  "upgd_beta2": 0.999,
+  "upgd_eps": 1e-5,
+  "upgd_use_adam_moments": true,
+  "upgd_gating_mode": "hidden_only",
+  "upgd_non_gated_scale": 0.5,
+
+  "_comment_5_": "Continual Backprop Parameters",
+  "use_cbp": true,
+  "replacement_rate": 0.00001,
+  "utility_function": "contribution",
+  "maturity_threshold": 1000,
+
+  "_comment_6_": "Network resetting parameters",
+  "reset_head": false,
+  "reset_network": false,
+  "early_stopping": true
+}
