@@ -14,6 +14,18 @@ from torch.utils.data import DataLoader
 import numpy as np
 from torchvision import transforms
 
+# WandB for experiment tracking
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
+
+# Import Logger from UPGD codebase for JSON logging
+import sys
+sys.path.insert(0, '/scratch/gautschi/shin283/upgd')
+from core.logger import Logger
+
 # from ml project manager
 from mlproj_manager.problems import CifarDataSet
 from mlproj_manager.experiments import Experiment
@@ -173,6 +185,46 @@ class IncrementalCIFARExperiment(Experiment):
         self.current_running_avg_step, self.running_loss, self.running_accuracy = (0, 0.0, 0.0)
         self._initialize_summaries()
 
+        """ WandB tracking """
+        self.use_wandb = access_dict(exp_params, "use_wandb", default=False, val_type=bool)
+        self.wandb_initialized = False
+
+        """ JSON logging setup """
+        self.json_logger = Logger(log_dir="/scratch/gautschi/shin283/upgd/logs")
+        optimizer_name = "upgd" if self.use_upgd else "sgd"
+        optimizer_hps = {
+            "lr": self.stepsize,
+            "weight_decay": self.weight_decay,
+            "momentum": self.momentum,
+        }
+        if self.use_upgd:
+            optimizer_hps.update({
+                "beta_utility": self.upgd_beta_utility,
+                "sigma": self.upgd_sigma,
+                "gating_mode": self.upgd_gating_mode,
+            })
+        self.json_logger.initialize_log_path(
+            task="incremental_cifar",
+            learner=optimizer_name,
+            network="resnet18",
+            optimizer_hps=optimizer_hps,
+            seed=self.random_seed,
+            n_samples=self.num_epochs
+        )
+
+        # Step-level data collection for JSON
+        self.json_step_data = {
+            "train_loss_per_step": [],
+            "train_accuracy_per_step": [],
+            "weight_l2_per_step": [],
+            "weight_l1_per_step": [],
+            "grad_l2_per_step": [],
+            "grad_l1_per_step": [],
+            "utility_histogram_per_step": {},
+            "global_max_utility_per_step": [],
+        }
+        self.json_step_counter = 0
+
     # ------------------------------ Methods for initializing the experiment ------------------------------#
     def _initialize_summaries(self):
         """
@@ -297,6 +349,22 @@ class IncrementalCIFARExperiment(Experiment):
         self.net.train()
         self._print("\t\tEpoch run time in seconds: {0:.4f}".format(epoch_runtime))
 
+        # Log to WandB
+        if self.use_wandb and self.wandb_initialized:
+            wandb_metrics = {
+                "epoch": epoch_number + 1,
+                "train/loss": float(self.results_dict["train_loss_per_checkpoint"][self.current_running_avg_step - 1]) if self.current_running_avg_step > 0 else 0.0,
+                "train/accuracy": float(self.results_dict["train_accuracy_per_checkpoint"][self.current_running_avg_step - 1]) if self.current_running_avg_step > 0 else 0.0,
+                "test/loss": float(self.results_dict["test_loss_per_epoch"][epoch_number]),
+                "test/accuracy": float(self.results_dict["test_accuracy_per_epoch"][epoch_number]),
+                "validation/loss": float(self.results_dict["validation_loss_per_epoch"][epoch_number]),
+                "validation/accuracy": float(self.results_dict["validation_accuracy_per_epoch"][epoch_number]),
+                "epoch_runtime": epoch_runtime,
+                "current_num_classes": self.current_num_classes,
+                "current_task": self.current_epoch // self.class_increase_frequency,
+            }
+            wandb.log(wandb_metrics, step=epoch_number)
+
         # Store UPGD utility statistics
         if self.use_upgd:
             utility_stats = self.optim.get_utility_stats()
@@ -326,6 +394,194 @@ class IncrementalCIFARExperiment(Experiment):
             self._print("\t\tUPGD Global Max Utility: {0:.6f}".format(utility_stats.get('global_max_utility', 0.0)))
             self._print("\t\tUPGD Mean Gate Value: {0:.4f}".format(gating_stats.get('mean_gate_value', 0.0)))
             self._print("\t\tUPGD Active Fraction: {0:.4f}".format(gating_stats.get('active_fraction', 0.0)))
+
+            # Log UPGD stats to WandB
+            if self.use_wandb and self.wandb_initialized:
+                upgd_metrics = {
+                    "upgd/global_max_utility": utility_stats.get('global_max_utility', 0.0),
+                    "upgd/mean_utility": utility_stats.get('mean_utility', 0.0),
+                    "upgd/utility_sparsity": utility_stats.get('utility_sparsity', 0.0),
+                    "upgd/mean_gate_value": gating_stats.get('mean_gate_value', 0.0),
+                    "upgd/active_fraction": gating_stats.get('active_fraction', 0.0),
+                    "upgd/gated_params": gating_stats.get('gated_params', 0),
+                    "upgd/non_gated_params": gating_stats.get('non_gated_params', 0),
+                }
+                
+                # Add per-layer utility statistics
+                layer_utilities = utility_stats.get('layer_utilities', {})
+                for layer_name, layer_utility in layer_utilities.items():
+                    short_name = layer_name.replace('.', '_')
+                    upgd_metrics[f"utility_layer/{short_name}"] = layer_utility
+                
+                wandb.log(upgd_metrics, step=epoch_number)
+
+        # Compute and log plasticity metrics (every 10 epochs to reduce overhead)
+        if self.use_wandb and self.wandb_initialized and (epoch_number + 1) % 10 == 0:
+            plasticity_metrics = self._compute_plasticity_metrics()
+            wandb.log(plasticity_metrics, step=epoch_number)
+
+    def _compute_plasticity_metrics(self):
+        """Compute plasticity metrics: dead neurons, weight norms, stable rank, effective rank."""
+        metrics = {}
+        
+        # Weight statistics per layer
+        total_params = 0
+        total_norm_sq = 0.0
+        sranks = []
+        eff_ranks = []
+        
+        for name, param in self.net.named_parameters():
+            if param.requires_grad:
+                # Weight norms
+                l2_norm = param.norm(2).item()
+                mean_abs = param.abs().mean().item()
+                short_name = name.replace('.', '_')
+                metrics[f"weight_norm/{short_name}"] = l2_norm
+                
+                total_params += param.numel()
+                total_norm_sq += l2_norm ** 2
+                
+                # Stable rank and effective rank for weight matrices
+                if 'weight' in name and param.dim() >= 2:
+                    try:
+                        W = param.view(param.size(0), -1)
+                        frobenius_sq = (W ** 2).sum().item()
+                        
+                        # SVD for stable rank and effective rank
+                        U, S, V = torch.linalg.svd(W, full_matrices=False)
+                        spectral_sq = (S[0] ** 2).item()
+                        
+                        # Stable rank
+                        srank = frobenius_sq / spectral_sq if spectral_sq > 1e-10 else 0.0
+                        metrics[f"srank/{short_name}"] = srank
+                        sranks.append(srank)
+                        
+                        # Effective rank (entropy-based)
+                        S_normalized = S / (S.sum() + 1e-10)
+                        entropy = -(S_normalized * torch.log(S_normalized + 1e-10)).sum().item()
+                        eff_rank = np.exp(entropy)
+                        metrics[f"effective_rank/{short_name}"] = eff_rank
+                        eff_ranks.append(eff_rank)
+                        
+                    except Exception:
+                        pass
+        
+        # Aggregate metrics
+        metrics["weight_norm/total"] = np.sqrt(total_norm_sq)
+        if sranks:
+            metrics["srank/mean"] = np.mean(sranks)
+            metrics["srank/min"] = np.min(sranks)
+        if eff_ranks:
+            metrics["effective_rank/mean"] = np.mean(eff_ranks)
+        
+        # Dead neurons detection (requires forward pass)
+        try:
+            dead_stats = self._compute_dead_neurons()
+            metrics.update(dead_stats)
+        except Exception:
+            pass
+        
+        return metrics
+
+    def _compute_dead_neurons(self, threshold=0.01):
+        """Compute fraction of dead neurons per layer using activation hooks."""
+        activations = {}
+        hooks = []
+        
+        def make_hook(name):
+            def hook(module, input, output):
+                activations[name] = output.detach()
+            return hook
+        
+        # Register hooks for linear/conv layers
+        for name, module in self.net.named_modules():
+            if isinstance(module, (torch.nn.Linear, torch.nn.Conv2d, torch.nn.BatchNorm2d)):
+                hooks.append(module.register_forward_hook(make_hook(name)))
+        
+        # Forward pass with dummy input
+        dummy_input = torch.randn(16, *self.image_dims[::-1], device=self.device)
+        with torch.no_grad():
+            _ = self.net(dummy_input)
+        
+        # Remove hooks
+        for h in hooks:
+            h.remove()
+        
+        # Compute dead neuron ratios
+        stats = {}
+        total_dead = 0
+        total_neurons = 0
+        
+        for name, act in activations.items():
+            if act.dim() >= 2:
+                mean_act = act.abs().mean(dim=0)
+                while mean_act.dim() > 1:
+                    mean_act = mean_act.mean(dim=-1)
+                
+                n_neurons = mean_act.numel()
+                n_dead = (mean_act < threshold).sum().item()
+                
+                short_name = name.replace('.', '_')
+                stats[f"dead_neurons/{short_name}"] = n_dead / n_neurons if n_neurons > 0 else 0.0
+                total_dead += n_dead
+                total_neurons += n_neurons
+        
+        stats["dead_neurons/total_ratio"] = total_dead / total_neurons if total_neurons > 0 else 0.0
+        stats["dead_neurons/total_count"] = total_dead
+        
+        return stats
+
+    def _save_json_checkpoint(self, final=False):
+        """Save JSON checkpoint with all collected metrics."""
+        # Convert results_dict tensors to lists
+        json_data = {}
+
+        # Per-epoch metrics from results_dict
+        for key in ["test_loss_per_epoch", "test_accuracy_per_epoch",
+                    "validation_loss_per_epoch", "validation_accuracy_per_epoch",
+                    "train_loss_per_checkpoint", "train_accuracy_per_checkpoint",
+                    "epoch_runtime"]:
+            if key in self.results_dict:
+                tensor = self.results_dict[key]
+                if isinstance(tensor, torch.Tensor):
+                    json_data[key] = tensor[:self.current_epoch].cpu().tolist()
+                else:
+                    json_data[key] = list(tensor)[:self.current_epoch]
+
+        # UPGD-specific per-epoch metrics
+        if self.use_upgd:
+            for key in ["upgd_global_max_utility", "upgd_mean_utility",
+                        "upgd_utility_sparsity", "upgd_mean_gate_value", "upgd_active_fraction"]:
+                if key in self.results_dict:
+                    tensor = self.results_dict[key]
+                    if isinstance(tensor, torch.Tensor):
+                        json_data[key] = tensor[:self.current_epoch].cpu().tolist()
+
+        # Step-level data
+        json_data.update(self.json_step_data)
+
+        # Add metadata fields directly
+        optimizer_name = "upgd" if self.use_upgd else "sgd"
+        json_data["task"] = "incremental_cifar"
+        json_data["learner"] = optimizer_name
+        json_data["network"] = "resnet18"
+        json_data["seed"] = self.random_seed
+        json_data["current_epoch"] = self.current_epoch
+        json_data["total_epochs"] = self.num_epochs
+        json_data["current_num_classes"] = self.current_num_classes
+        json_data["status"] = "completed" if final else "in_progress"
+        if self.use_upgd:
+            json_data["upgd_config"] = {
+                "beta_utility": self.upgd_beta_utility,
+                "sigma": self.upgd_sigma,
+                "gating_mode": self.upgd_gating_mode,
+            }
+
+        # Save to logger
+        self.json_logger.log(**json_data)
+
+        if final:
+            print(f"Final JSON log saved to: {self.json_logger.log_path}")
 
     def evaluate_network(self, test_data: DataLoader):
         """
@@ -472,6 +728,42 @@ class IncrementalCIFARExperiment(Experiment):
                     self._print("\t\tStep Number: {0}".format(step_number + 1))
                     self._store_training_summaries()
 
+                # Collect step-level data for JSON (every 10 steps to reduce overhead)
+                if self.json_step_counter % 10 == 0:
+                    self.json_step_data["train_loss_per_step"].append(float(current_loss.item()))
+                    self.json_step_data["train_accuracy_per_step"].append(float(current_accuracy.item()))
+
+                    # Weight/gradient statistics
+                    total_weight_l2 = 0.0
+                    total_weight_l1 = 0.0
+                    total_grad_l2 = 0.0
+                    total_grad_l1 = 0.0
+                    for param in self.net.parameters():
+                        if param.requires_grad:
+                            total_weight_l2 += param.norm(2).item() ** 2
+                            total_weight_l1 += param.abs().sum().item()
+                            if param.grad is not None:
+                                total_grad_l2 += param.grad.norm(2).item() ** 2
+                                total_grad_l1 += param.grad.abs().sum().item()
+                    self.json_step_data["weight_l2_per_step"].append(float(np.sqrt(total_weight_l2)))
+                    self.json_step_data["weight_l1_per_step"].append(float(total_weight_l1))
+                    self.json_step_data["grad_l2_per_step"].append(float(np.sqrt(total_grad_l2)))
+                    self.json_step_data["grad_l1_per_step"].append(float(total_grad_l1))
+
+                    # UPGD-specific stats
+                    if self.use_upgd and hasattr(self.optim, 'get_utility_stats'):
+                        utility_stats = self.optim.get_utility_stats()
+                        if 'global_max_utility' in utility_stats:
+                            self.json_step_data["global_max_utility_per_step"].append(float(utility_stats['global_max_utility']))
+                        # Collect histogram bins
+                        for key, value in utility_stats.items():
+                            if 'hist_' in key and isinstance(value, (int, float)):
+                                if key not in self.json_step_data["utility_histogram_per_step"]:
+                                    self.json_step_data["utility_histogram_per_step"][key] = []
+                                self.json_step_data["utility_histogram_per_step"][key].append(float(value))
+
+                self.json_step_counter += 1
+
             epoch_end_time = time.perf_counter()
             self._store_test_summaries(test_dataloader, val_dataloader, epoch_number=e,
                                        epoch_runtime=epoch_end_time - epoch_start_time)
@@ -481,6 +773,13 @@ class IncrementalCIFARExperiment(Experiment):
 
             if self.current_epoch % self.checkpoint_save_frequency == 0:
                 self.save_experiment_checkpoint()
+
+            # Save JSON checkpoint every 50 epochs
+            if self.current_epoch % 50 == 0:
+                self._save_json_checkpoint()
+
+        # Final JSON save at end of training
+        self._save_json_checkpoint(final=True)
 
 
     def set_lr(self):
@@ -558,6 +857,14 @@ def main():
                         help="Index for the run; this will determine the random seed and the name of the results.")
     parser.add_argument("--verbose", action="store_true", default=False,
                         help="Whether to print extra information about the experiment as it's running.")
+    parser.add_argument("--wandb", action="store_true", default=False,
+                        help="Whether to log to Weights & Biases.")
+    parser.add_argument("--wandb-project", action="store", type=str, default="upgd-incremental-cifar",
+                        help="WandB project name.")
+    parser.add_argument("--wandb-entity", action="store", type=str, default=None,
+                        help="WandB entity (team) name.")
+    parser.add_argument("--wandb-run-name", action="store", type=str, default=None,
+                        help="WandB run name.")
     args = parser.parse_args()
 
     with open(args.config, 'r') as config_file:
@@ -571,15 +878,39 @@ def main():
     if "experiment_name" not in experiment_parameters.keys() or experiment_parameters["experiment_name"] == "":
         experiment_parameters["experiment_name"] = os.path.splitext(os.path.basename(args.config_file))
 
+    # Add use_wandb to experiment parameters
+    experiment_parameters["use_wandb"] = args.wandb and WANDB_AVAILABLE
+
+    # Initialize WandB if requested
+    if experiment_parameters["use_wandb"]:
+        run_name = args.wandb_run_name or f"{experiment_parameters.get('experiment_name', 'incr_cifar')}_idx{args.experiment_index}"
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            config=experiment_parameters,
+            name=run_name,
+            save_code=True,
+        )
+        print(f"WandB initialized: {wandb.run.url}")
+
     initial_time = time.perf_counter()
     exp = IncrementalCIFARExperiment(experiment_parameters,
                                      results_dir=os.path.join(experiment_parameters["results_dir"], experiment_parameters["experiment_name"]),
                                      run_index=args.experiment_index,
                                      verbose=args.verbose)
+    
+    # Set WandB initialized flag
+    if experiment_parameters["use_wandb"]:
+        exp.wandb_initialized = True
+
     exp.run()
     exp.store_results()
     final_time = time.perf_counter()
     print("The running time in minutes is: {0:.2f}".format((final_time - initial_time) / 60))
+
+    # Finish WandB run
+    if experiment_parameters["use_wandb"]:
+        wandb.finish()
 
 
 if __name__ == "__main__":
