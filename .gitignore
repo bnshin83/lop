@@ -13,6 +13,9 @@ share/
 data/
 .DS_Store
 
+# Localcontrol experiment definitions (tracked)
+!.localcontrol/
+
 # Large experiment data directories
 log/
 logs/
