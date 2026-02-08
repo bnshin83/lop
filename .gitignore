@@ -27,7 +27,7 @@ analysis_checkpoints/
 
 # Dataset directories
 cifar100/
-lop/
+
 
 # Generated plots and analysis
 evolution_plots/
@@ -58,3 +58,21 @@ from_OneDrive/
 
 # Temporary files
 temp_*.py
+
+ # Allow reading RL code/configs/logs for debugging (tools cannot access gitignored files)
+ !lop/
+ !lop/rl/
+ !lop/rl/cfg/
+ !lop/rl/cfg/**
+ !lop/rl/run_ppo_wandb.py
+ !lop/rl/logs/
+ !lop/rl/logs/*.out
+ !lop/rl/logs/*.err
+.lop_venv_compute/
+
+# Large data/results dirs (not for git)
+lop/permuted_mnist/data_before_curv/
+lop/rl/optim/
+lop/rl/data_backup_20251211/
+lop/incremental_cifar/results/
+lop/incremental_cifar/lop/

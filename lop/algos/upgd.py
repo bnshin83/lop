@@ -265,6 +265,7 @@ class UPGD(torch.optim.Optimizer):
         stats = {
             'utility_histograms': {},
             'utility_norms': {},
+            'layer_utilities': {},  # Per-layer mean utilities for WandB
             'global_max_utility': -torch.inf,
             'mean_utility': 0.0,
             'utility_sparsity': 0.0,
@@ -294,6 +295,9 @@ class UPGD(torch.optim.Optimizer):
 
                 # Compute L2 norm
                 stats['utility_norms'][param_name] = float(torch.norm(utility).item())
+
+                # Per-layer mean utility for WandB logging
+                stats['layer_utilities'][param_name] = float(utility.mean().item())
 
                 # Track for global statistics
                 all_utilities.append(utility.flatten())

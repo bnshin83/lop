@@ -16,6 +16,8 @@ class Policy(object):
         with torch.no_grad():
             dist = self.dist(x, to_log_features=to_log_features)
             action = dist.sample()
+            if not getattr(self, 'discrete_actions', False):
+                action = torch.clamp(action, -1.0, 1.0)
             lprob = dist.log_prob(action).sum(-1, keepdim=True)
         return action, lprob, dist
 
@@ -91,7 +93,10 @@ class MLPPolicy(Policy, nn.Module):
         self.to_log_features = to_log_features
         action_mean = self.mean_net(x)
         self.to_log_features = False
-        return Normal(action_mean, torch.exp(self.log_std))
+        log_std = torch.clamp(self.log_std, -20.0, 2.0)
+        scale = torch.exp(log_std)
+        scale = torch.clamp(scale, min=1e-6, max=1e6)
+        return Normal(action_mean, scale)
 
     def dist_to(self, dist, to_device='cpu'):
         dist.loc.to(to_device)

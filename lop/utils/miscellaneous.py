@@ -212,3 +212,88 @@ def compute_abs_approximate_rank(sv: torch.Tensor, prop=0.99):
         cumulative_ns_sv_sum += normed_sqrd_sv[approximate_rank]
         approximate_rank += 1
     return torch.tensor(approximate_rank, dtype=torch.int32)
+
+
+def compute_margins_per_layer(network, data, at_risk_epsilon=0.1):
+    """
+    Compute death-risk margins for each layer sequentially.
+
+    A neuron is DEAD when its max pre-activation across all samples is negative,
+    meaning it never fires (ReLU output is always 0).
+
+    Geometric interpretation: A dead neuron's hyperplane (w^T x + b = 0) lies
+    entirely on one side of the data manifold.
+
+    Args:
+        network: nn.Sequential with alternating Linear and activation layers
+                 Structure: [Linear, Act, Linear, Act, ..., Linear]
+        data: Input observations tensor of shape (N_samples, input_dim)
+        at_risk_epsilon: Threshold for "at-risk" neurons (default 0.1)
+
+    Returns:
+        dict with keys:
+            'margins': dict mapping layer_idx -> tensor of max pre-activations per neuron
+            'dead_counts': dict mapping layer_idx -> number of dead neurons
+            'at_risk_counts': dict mapping layer_idx -> number of at-risk neurons
+            'min_margins': dict mapping layer_idx -> tensor of min pre-activations per neuron
+            'mean_margins': dict mapping layer_idx -> tensor of mean pre-activations per neuron
+
+    Interpretation:
+        margin < 0  →  Dead (never fires on any sample)
+        margin ≈ 0  →  At risk (barely fires on few samples)
+        margin > 0  →  Alive (fires on at least some inputs)
+    """
+    margins = {}          # max pre-activation per neuron
+    min_margins = {}      # min pre-activation per neuron
+    mean_margins = {}     # mean pre-activation per neuron
+    dead_counts = {}
+    at_risk_counts = {}
+    always_on_counts = {}  # neurons that always fire (min > 0)
+
+    x = data.clone()
+
+    # Network structure: [Linear, ReLU, Linear, ReLU, ..., Linear]
+    # We analyze hidden layers (not the final output layer)
+    num_hidden_layers = (len(network) - 1) // 2  # Exclude output layer
+
+    with torch.no_grad():
+        for l in range(num_hidden_layers):
+            layer = network[2 * l]  # Linear layer at index 0, 2, 4, ...
+            W, b = layer.weight, layer.bias
+
+            # Compute pre-activations: z = Wx + b
+            # x: (N_samples, in_features), W: (out_features, in_features)
+            pre_act = x @ W.T + b  # Shape: (N_samples, N_neurons)
+
+            # Max pre-activation across all samples (for death detection)
+            max_pre_act, _ = pre_act.max(dim=0)  # Shape: (N_neurons,)
+            margins[l] = max_pre_act
+
+            # Min pre-activation (for always-on detection)
+            min_pre_act, _ = pre_act.min(dim=0)
+            min_margins[l] = min_pre_act
+
+            # Mean pre-activation (for general health)
+            mean_margins[l] = pre_act.mean(dim=0)
+
+            # Count dead neurons: max < 0 means never fires
+            dead_counts[l] = (max_pre_act < 0).sum().item()
+
+            # Count at-risk neurons: 0 <= max < epsilon (barely fires)
+            at_risk_counts[l] = ((max_pre_act >= 0) & (max_pre_act < at_risk_epsilon)).sum().item()
+
+            # Count always-on neurons: min > 0 means always fires
+            always_on_counts[l] = (min_pre_act > 0).sum().item()
+
+            # Propagate to next layer with ReLU activation
+            x = torch.relu(pre_act)
+
+    return {
+        'margins': margins,           # max pre-act per neuron per layer
+        'min_margins': min_margins,   # min pre-act per neuron per layer
+        'mean_margins': mean_margins, # mean pre-act per neuron per layer
+        'dead_counts': dead_counts,
+        'at_risk_counts': at_risk_counts,
+        'always_on_counts': always_on_counts,
+        'num_hidden_layers': num_hidden_layers
+    }

@@ -19,4 +19,5 @@ beta_2: 0.99
 wd: 0
 frictions_file: 'cfg/frictions'
 dir: 'data/sant/bp/ns/'
-label: 'NS Adam'
+to_log: ['pol_features_activity', 'pol_weights', 'val_weights', 'stable_rank', 'weight_change']
+label: 'NS Adam (b1=b2=0.99)'

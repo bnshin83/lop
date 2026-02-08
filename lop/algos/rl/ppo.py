@@ -37,13 +37,40 @@ class PPO(Learner):
                  redo=False,
                  threshold=0.03,
                  reset_period=1000,
+                 # UPGD-specific kwargs
+                 beta_utility=0.9999,
+                 sigma=0.001,
+                 gating_mode='full',
+                 non_gated_scale=0.5,
+                 gating_fn='sigmoid',
                  ):
         self.pol = pol
         self.buf = buf
         self.g = g
         self.vf = vf
         self.lm = lm
-        self.opt = Opt(list(self.pol.parameters()) + list(self.vf.parameters()), lr=lr, weight_decay=wd, betas=betas, eps=eps)
+        
+        # Build named parameter list for optimizers that need it (e.g., UPGD)
+        named_params = [(name, param) for name, param in self.pol.named_parameters()]
+        named_params += [(f'vf.{name}', param) for name, param in self.vf.named_parameters()]
+        
+        # Detect optimizer type and initialize appropriately
+        opt_name = Opt.__name__ if hasattr(Opt, '__name__') else str(Opt)
+        if 'UPGD' in opt_name or 'FirstOrder' in opt_name:
+            # UPGD optimizer - pass named params and UPGD-specific kwargs
+            if 'LayerSelective' in opt_name:
+                self.opt = Opt(named_params, lr=lr, weight_decay=wd, 
+                              beta_utility=beta_utility, sigma=sigma,
+                              gating_mode=gating_mode, non_gated_scale=non_gated_scale,
+                              betas=betas, eps=eps, gating_fn=gating_fn)
+            else:
+                self.opt = Opt(named_params, lr=lr, weight_decay=wd,
+                              beta_utility=beta_utility, sigma=sigma,
+                              betas=betas, eps=eps, gating_fn=gating_fn)
+        else:
+            # Standard optimizer (Adam) - pass regular params and Adam kwargs
+            self.opt = Opt(list(self.pol.parameters()) + list(self.vf.parameters()), 
+                          lr=lr, weight_decay=wd, betas=betas, eps=eps)
         self.device =device
         self.u_epi_up = u_epi_up
         self.n_itrs = n_itrs
@@ -145,9 +172,6 @@ class PPO(Learner):
                 if self.max_grad_norm > 0:
                     nn.utils.clip_grad_norm_(list(self.pol.parameters()) + list(self.vf.parameters()), self.max_grad_norm)
                 self.opt.step()
-                if self.to_perturb:
-                    self.perturb(net=self.pol.mean_net)
-                    self.perturb(net=self.vf.v_net)
                 # Selective reinitialization
                 if self.pgnt:
                     with torch.no_grad():
@@ -162,6 +186,11 @@ class PPO(Learner):
                         elif isinstance(self.pol_gnt, GnTredo):
                             features_history = torch.stack(self.vf.get_activations()).permute(1, 0, 2)
                             self.val_gnt.gen_and_test(features_history=features_history)
+        # Apply perturbation once per PPO update (after all epochs and mini-batches)
+        if self.to_perturb:
+            self.perturb(net=self.pol.mean_net, device=self.device)
+            self.perturb(net=self.vf.v_net, device=self.device)
+
         idx, change = 0, 0
         for layer in self.pol.mean_net:
             if type(layer) is torch.nn.modules.linear.Linear:

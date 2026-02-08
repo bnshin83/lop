@@ -1,37 +1,55 @@
 import os
 import xml.etree.ElementTree as ET
 
-import gym
-from gym.utils import EzPickle
-from gym.envs.mujoco.ant import AntEnv
-from gym.envs.mujoco.ant_v3 import AntEnv as AntEnv3
-from gym.envs.mujoco.mujoco_env import MujocoEnv
+import gymnasium as gym
+from gymnasium.utils import EzPickle
+from gymnasium.envs.mujoco.ant_v4 import AntEnv
+from gymnasium.envs.mujoco.mujoco_env import MujocoEnv
 
 
-class SlipperyAntEnv(AntEnv, MujocoEnv, EzPickle):
+class SlipperyAntEnv(AntEnv, EzPickle):
     """
-    SlipperyAnt-v2
+    SlipperyAnt-v2 (gymnasium version)
     """
-    def __init__(self, friction=1.0, xml_file='ant.xml'):
-        self.xml_file = xml_file
+    def __init__(self, friction=1.0, xml_file='ant.xml', **kwargs):
         self.friction = friction
+        self.custom_xml_file = xml_file
         self.gen_xml_file()
-        MujocoEnv.__init__(self, self.xml_file, 5)
-        EzPickle.__init__(self)
+        
+        # Initialize with the generated XML file
+        AntEnv.__init__(
+            self,
+            xml_file=self.custom_xml_file,
+            ctrl_cost_weight=0.5,
+            contact_cost_weight=5e-4,
+            healthy_reward=1.0,
+            terminate_when_unhealthy=True,
+            healthy_z_range=(0.2, 1.0),
+            contact_force_range=(-1.0, 1.0),
+            reset_noise_scale=0.1,
+            exclude_current_positions_from_observation=True,
+            **kwargs
+        )
+        EzPickle.__init__(self, friction=friction, xml_file=xml_file, **kwargs)
     
     def gen_xml_file(self):
-        old_file = os.path.join(os.path.dirname(gym.envs.mujoco.ant.__file__), "assets", 'ant.xml')
+        # Get the path to the gymnasium ant.xml asset
+        import gymnasium.envs.mujoco
+        old_file = os.path.join(os.path.dirname(gymnasium.envs.mujoco.__file__), "assets", 'ant.xml')
         # Parse old xml file
         tree = ET.parse(old_file)
         root = tree.getroot()
-        # Update friction value
-        root[3][1].attrib['friction'] = str(self.friction) + ' 0.5 0.5'
-        tree.write(self.xml_file)
+        # Update friction value - find the <geom> element in worldbody for floor
+        for geom in root.iter('geom'):
+            if geom.get('name') == 'floor':
+                geom.set('friction', f'{self.friction} 0.5 0.5')
+                break
+        tree.write(self.custom_xml_file)
 
 
-class SlipperyAntEnv3(AntEnv3, MujocoEnv, EzPickle):
+class SlipperyAntEnv3(AntEnv, EzPickle):
     """
-    SlipperyAnt-v3
+    SlipperyAnt-v3 (gymnasium version, equivalent to Ant-v4)
     """
     def __init__(
         self,
@@ -45,29 +63,51 @@ class SlipperyAntEnv3(AntEnv3, MujocoEnv, EzPickle):
         contact_force_range=(-1.0, 1.0),
         reset_noise_scale=0.1,
         exclude_current_positions_from_observation=True,
+        **kwargs
     ):
-        self.xml_file = xml_file
         self.friction = friction
+        self.custom_xml_file = xml_file
         self.gen_xml_file()
         
-        EzPickle.__init__(**locals())
-        self._ctrl_cost_weight = ctrl_cost_weight
-        self._contact_cost_weight = contact_cost_weight
-        self._healthy_reward = healthy_reward
-        self._terminate_when_unhealthy = terminate_when_unhealthy
-        self._healthy_z_range = healthy_z_range
-        self._contact_force_range = contact_force_range
-        self._reset_noise_scale = reset_noise_scale
-        self._exclude_current_positions_from_observation = (
-            exclude_current_positions_from_observation
+        EzPickle.__init__(
+            self,
+            friction=friction,
+            xml_file=xml_file,
+            ctrl_cost_weight=ctrl_cost_weight,
+            contact_cost_weight=contact_cost_weight,
+            healthy_reward=healthy_reward,
+            terminate_when_unhealthy=terminate_when_unhealthy,
+            healthy_z_range=healthy_z_range,
+            contact_force_range=contact_force_range,
+            reset_noise_scale=reset_noise_scale,
+            exclude_current_positions_from_observation=exclude_current_positions_from_observation,
+            **kwargs
         )
-        MujocoEnv.__init__(self, self.xml_file, 5)
+        
+        AntEnv.__init__(
+            self,
+            xml_file=self.custom_xml_file,
+            ctrl_cost_weight=ctrl_cost_weight,
+            contact_cost_weight=contact_cost_weight,
+            healthy_reward=healthy_reward,
+            terminate_when_unhealthy=terminate_when_unhealthy,
+            healthy_z_range=healthy_z_range,
+            contact_force_range=contact_force_range,
+            reset_noise_scale=reset_noise_scale,
+            exclude_current_positions_from_observation=exclude_current_positions_from_observation,
+            **kwargs
+        )
 
     def gen_xml_file(self):
-        old_file = os.path.join(os.path.dirname(gym.envs.mujoco.ant_v3.__file__), "assets", 'ant.xml')
+        # Get the path to the gymnasium ant.xml asset
+        import gymnasium.envs.mujoco
+        old_file = os.path.join(os.path.dirname(gymnasium.envs.mujoco.__file__), "assets", 'ant.xml')
         # Parse old xml file
         tree = ET.parse(old_file)
         root = tree.getroot()
-        # Update friction value
-        root[3][1].attrib['friction'] = str(self.friction) + ' 0.5 0.5'
-        tree.write(self.xml_file)
+        # Update friction value - find the <geom> element for floor
+        for geom in root.iter('geom'):
+            if geom.get('name') == 'floor':
+                geom.set('friction', f'{self.friction} 0.5 0.5')
+                break
+        tree.write(self.custom_xml_file)

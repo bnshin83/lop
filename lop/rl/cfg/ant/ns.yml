@@ -1,4 +1,4 @@
-env_name: 'Ant-v3'
+env_name: 'Ant-v4'
 act_type: 'ReLU'
 n_steps: 1e8
 g: 0.99

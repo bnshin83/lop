@@ -1,0 +1,26 @@
+env_name: 'Ant-v4'
+act_type: 'ReLU'
+n_steps: 1e8
+g: 0.99
+lm: 0.95
+u_epi_ups: 0
+bs: 2048
+n_itrs: 10
+n_slices: 16
+lr: 0.0001
+max_grad_norm: 1.0
+h_dim: [256, 256]
+u_adv_scl: 1
+clip_eps: 0.2
+ob_norm: 0
+rew_norm: 0
+beta_1: 0.99
+beta_2: 0.99
+wd: 1e-3
+perturb_scale: 0.001
+dir: 'data/ant/sp/'
+to_log: ['pol_features_activity', 'pol_weights', 'val_weights', 'stable_rank', 'weight_change']
+label: 'PPO+Shrink&Perturb'
+
+# Standard Adam optimizer with weight decay (shrink) and perturbation
+optimizer_type: 'adam'

@@ -1,13 +1,7 @@
 from lop.envs.slippery_ant import SlipperyAntEnv, SlipperyAntEnv3
 
 
-from gym.envs.registration import (
-    register,
-    load_env_plugins as _load_env_plugins,
-)
-
-# Hook to load plugins from entry points
-_load_env_plugins()
+from gymnasium.envs.registration import register
 
 
 register(

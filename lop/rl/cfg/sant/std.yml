@@ -17,4 +17,5 @@ rew_norm: 0
 wd: 0
 frictions_file: 'cfg/frictions'
 dir: 'data/sant/bp/std/'
+to_log: ['pol_features_activity', 'pol_weights', 'val_weights', 'stable_rank', 'weight_change']
 label: 'Standard PPO'
